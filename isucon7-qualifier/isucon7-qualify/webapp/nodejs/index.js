@@ -118,32 +118,25 @@ function getIndex(req, res) {
   }
 }
 
-function getChannelListInfo(conn, focusChannelId = null) {
-  return conn.query("SELECT * FROM channel ORDER BY id").then((channels) => {
-    let description = "";
-    channels.forEach((channel) => {
-      if (channel.id == focusChannelId) {
-        description = channel.description;
-      }
-    });
-
-    return { channels, description };
-  });
+async function getChannelListInfo(conn) {
+  const channels = await conn.query("SELECT * FROM channel ORDER BY id");
+  return { channels };
 }
 
 app.get("/channel/:channelId", loginRequired, getChannel);
 function getChannel(req, res) {
   const { channelId } = req.params;
-  return getChannelListInfo(pool, channelId).then(
-    ({ channels, description }) => {
-      res.render("channel", {
-        req,
-        channels,
-        description,
-        channelId,
-      });
-    }
-  );
+  return getChannelListInfo(pool).then(({ channels }) => {
+    const description =
+      channels.find((c) => c.id === channelId)?.description ?? "";
+
+    res.render("channel", {
+      req,
+      channels,
+      description,
+      channelId,
+    });
+  });
 }
 
 app.get("/register", getRegister);
@@ -324,67 +317,58 @@ async function fetchUnread(req, res) {
 }
 
 app.get("/history/:channelId", loginRequired, getHistory);
-function getHistory(req, res) {
+async function getHistory(req, res) {
   const { channelId } = req.params;
   let page = parseInt(req.query.page || "1");
 
   const N = 20;
-  return pool
-    .query("SELECT COUNT(*) as cnt FROM message WHERE channel_id = ?", [
-      channelId,
-    ])
-    .then(([row2]) => {
-      const cnt = row2.cnt;
-      const maxPage = Math.max(Math.ceil(cnt / N), 1);
 
-      if (isNaN(page) || page < 1 || page > maxPage) {
-        res.status(400).end();
-        return;
-      }
+  const [row2] = await pool.query(
+    "SELECT COUNT(1) as cnt FROM message WHERE channel_id = ?",
+    [channelId]
+  );
+  const cnt = row2.cnt;
+  const maxPage = Math.max(Math.ceil(cnt / N), 1);
 
-      return pool
-        .query(
-          "SELECT * FROM message WHERE channel_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
-          [channelId, N, (page - 1) * N]
-        )
-        .then((rows) => {
-          const messages = [];
-          let p = Promise.resolve();
-          rows.forEach((row) => {
-            const r = {};
-            r.id = row.id;
-            p = p.then(() => {
-              return pool
-                .query(
-                  "SELECT name, display_name, avatar_icon FROM user WHERE id = ?",
-                  [row.user_id]
-                )
-                .then(([user]) => {
-                  r.user = user;
-                  r.date = formatDate(row.created_at);
-                  r.content = row.content;
-                  messages.push(r);
-                });
-            });
-          });
+  if (isNaN(page) || page < 1 || page > maxPage) {
+    res.status(400).end();
+    return;
+  }
 
-          return p.then(() => {
-            messages.reverse();
-            return getChannelListInfo(pool, channelId).then(
-              ({ channels, description }) => {
-                res.render("history", {
-                  req,
-                  channels,
-                  channelId,
-                  messages,
-                  maxPage,
-                  page,
-                });
-              }
-            );
-          });
-        });
-    });
+  const rows = await pool.query(
+    `
+    SELECT 
+      m.id, m.created_at, m.content,
+      u.name, u.display_name, u.avatar_icon
+    FROM message m 
+    LEFT JOIN user u on m.user_id = u.id
+    WHERE m.channel_id = ? 
+    ORDER BY m.id DESC
+    LIMIT ? OFFSET ?`,
+    [channelId, N, (page - 1) * N]
+  );
+
+  const messages = rows.map((row) => ({
+    id: row.id,
+    date: formatDate(row.created_at),
+    content: row.content,
+    user: {
+      name: row.name,
+      display_name: row.display_name,
+      avatar_icon: row.avatar_icon,
+    },
+  }));
+  messages.reverse();
+
+  const { channels } = await getChannelListInfo(pool);
+  res.render("history", {
+    req,
+    channels,
+    channelId,
+    messages,
+    maxPage,
+    page,
+  });
 }
 
 app.get("/profile/:userName", loginRequired, getProfile);
