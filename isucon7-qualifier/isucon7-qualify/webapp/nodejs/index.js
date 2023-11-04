@@ -284,35 +284,6 @@ async function getMessage(req, res) {
     [userId, channel_id, maxMessageId, maxMessageId]
   );
 
-  // const rows = await pool.query(
-  //   "SELECT * FROM message WHERE id > ? AND channel_id = ? ORDER BY id DESC LIMIT 100",
-  //   [last_message_id, channel_id]
-  // );
-  // const response = [];
-  // await Promise.all(
-  //   rows.map(async (row, i) => {
-  //     const [user] = await pool.query(
-  //       "SELECT name, display_name, avatar_icon FROM user WHERE id = ?",
-  //       [row.user_id]
-  //     );
-  //     const r = {
-  //       id: row.id,
-  //       user,
-  //       date: formatDate(row.created_at),
-  //       content: row.content,
-  //     };
-  //     response[i] = r;
-  //   })
-  // );
-
-  // response.reverse();
-  // const maxMessageId = rows.length ? Math.max(...rows.map((r) => r.id)) : 0;
-  // await pool.query(
-  //   `INSERT INTO haveread (user_id, channel_id, message_id, updated_at, created_at)
-  //   VALUES (?, ?, ?, NOW(), NOW())
-  //   ON DUPLICATE KEY UPDATE message_id = ?, updated_at = NOW()`,
-  //   [userId, channel_id, maxMessageId, maxMessageId]
-  // );
   res.json(response);
   return;
 }
